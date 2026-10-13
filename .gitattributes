@@ -1,0 +1,12 @@
+# Keep generated PDFs / images byte-exact on every OS.
+*.pdf binary
+*.png binary
+*.jpg binary
+# Source files always use LF.
+*.gs text eol=lf
+*.js text eol=lf
+*.json text eol=lf
+*.html text eol=lf
+*.css text eol=lf
+*.py text eol=lf
+*.txt text eol=lf
