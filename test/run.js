@@ -7,6 +7,9 @@
  * (test/gas-mock.js), after setupDemo() wrote the demo sample data.
  * Demo: seed data (plain JSON = Apps Script = web page), setupDemo,
  * seedDemoData_, demoAutoReset, resetDemoNow, demo info, neutral branding.
+ * Premium features are locked in the public demo; tests marked
+ * "[premium code path]" unlock them (createSeededBackend({ premium: true }))
+ * to keep the underlying code covered. Lock tests are in demo-tests.js.
  * Frontend: syntax check of every inline <script> in docs/index.html.
  */
 const assert = require("assert");
@@ -73,8 +76,8 @@ test("action=api returns every SDS row from the sheet", () => {
   assert.ok(rows.every(row => row.id && typeof row.chemical === "string" && Array.isArray(row.hazards)));
 });
 
-test("bootstrap equals api + columnWidths + columnVisibility + hazardDefinitions", () => {
-  const env = createSeededBackend();
+test("[premium code path] bootstrap equals api + columnWidths + columnVisibility + hazardDefinitions", () => {
+  const env = createSeededBackend({ premium: true });
   assertBootstrapMatchesIndividual(env, "fresh install:");
   // With saved settings as well.
   okData(env.post({ action: "saveColumnWidths", columnWidths: { 1: 90, 3: 250 }, password: PASSWORD }));
@@ -144,8 +147,8 @@ test("JSONP callback and old GET actions still work; no action returns API info 
   assert.ok(!env.get({ action: "nope" }).html);
 });
 
-test("file action returns an uploaded PDF", () => {
-  const env = createSeededBackend();
+test("[premium code path] file action returns an uploaded PDF", () => {
+  const env = createSeededBackend({ premium: true });
   const saved = okData(env.post({
     action: "save",
     record: { chemicalEnglish: "PDF holder" },
@@ -218,8 +221,8 @@ test("save takes the script lock and reads the sheet data once before writing", 
   assert.ok(stats.sheetReads <= 3, "sheet reads during save: " + stats.sheetReads);
 });
 
-test("delete needs the password; deleted records disappear from api and bootstrap", () => {
-  const env = createSeededBackend();
+test("[premium code path] delete needs the password; deleted records disappear from api and bootstrap", () => {
+  const env = createSeededBackend({ premium: true });
   const before = bootstrapOf(env);
   const target = before.rows[2];
   const v0 = version(env);
@@ -239,15 +242,15 @@ test("delete needs the password; deleted records disappear from api and bootstra
   assert.strictEqual(version(env), v1);
 });
 
-test("delete trashes the record's uploaded PDF", () => {
-  const env = createSeededBackend();
+test("[premium code path] delete trashes the record's uploaded PDF", () => {
+  const env = createSeededBackend({ premium: true });
   const saved = okData(env.post({ action: "save", record: { chemicalEnglish: "With file" }, file: { name: "x.pdf", base64: Buffer.from("pdf").toString("base64") } }));
   okData(env.post({ action: "delete", id: saved.id, password: PASSWORD }));
   assert.strictEqual(env.driveFiles.get(saved.pdfFileId).trashed, true);
 });
 
-test("table settings saves need the password and invalidate the cache", () => {
-  const env = createSeededBackend();
+test("[premium code path] table settings saves need the password and invalidate the cache", () => {
+  const env = createSeededBackend({ premium: true });
   bootstrapOf(env);
   const v0 = version(env);
   assert.ok(/Incorrect password/.test(errorOf(env.post({ action: "saveColumnWidths", columnWidths: { 1: 100 }, password: "bad" }))));
@@ -274,8 +277,8 @@ test("table settings saves need the password and invalidate the cache", () => {
   assertBootstrapMatchesIndividual(env, "after visibility:");
 });
 
-test("hazard definition saves invalidate the cache", () => {
-  const env = createSeededBackend();
+test("[premium code path] hazard definition saves invalidate the cache", () => {
+  const env = createSeededBackend({ premium: true });
   bootstrapOf(env);
   const v0 = version(env);
   assert.ok(errorOf(env.post({ action: "saveHazardDefinitions", hazardDefinitions: [] })));
@@ -316,8 +319,8 @@ test("verifyPassword: demo password works; wrong passwords never lock the public
   assert.ok(okData(env.get({ action: "bootstrap" })).rows.length > 0);
 });
 
-test("missing action password configuration is reported, not bypassed", () => {
-  const env = createSeededBackend();
+test("[premium code path] missing action password configuration is reported, not bypassed", () => {
+  const env = createSeededBackend({ premium: true });
   env.properties.delete("SDS_ACTION_PASSWORD");
   assert.ok(/not configured/.test(errorOf(env.post({ action: "delete", id: "1", password: "" }))));
 });

@@ -1,4 +1,5 @@
-/* DEMO banner: next automatic reset (with countdown), demo account and the
+/* DEMO banner: next automatic reset of the shared data (every 5 hours, with
+   an hours/minutes countdown), demo account and the
    contact line from config.js (DEMO_CONTACT). Loaded right after the banner
    markup at the top of <body>, so it can reuse the early bootstrap request
    (its response carries data.demo) before the main script consumes it. */
@@ -29,7 +30,8 @@
   }
 
   function countdownText(ms) {
-    if (ms <= 0) return "(กำลังจะรีเซ็ตเร็วๆ นี้)";
+    // The hourly trigger picks the reset up within the next hour.
+    if (ms <= 0) return "(กำลังรีเซ็ต ภายใน 1 ชม.)";
     var minutes = Math.floor(ms / 60000);
     var days = Math.floor(minutes / 1440);
     var hours = Math.floor((minutes % 1440) / 60);

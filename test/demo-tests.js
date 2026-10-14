@@ -2,7 +2,9 @@
 /*
  * DEMO-specific tests, registered by test/run.js:
  * seed data, setupDemo / seedDemoData_ / demoAutoReset / resetDemoNow,
- * demo info, demo limits, docs config + banner, neutral branding.
+ * 5-hour reset with a fake clock, demo info, locked premium features
+ * (server + page), demo limits, docs config + banner + trial gate,
+ * neutral branding.
  */
 const assert = require("assert");
 const fs = require("fs");
@@ -13,6 +15,24 @@ const { createSeededBackend, createGasEnvironment } = require("./gas-mock");
 const repo = path.resolve(__dirname, "..");
 const PASSWORD = "demo1234";
 const DAY = 24 * 60 * 60 * 1000;
+const HOUR = 60 * 60 * 1000;
+const MINUTE = 60 * 1000;
+const LOCKED_MESSAGE = "ฟีเจอร์นี้มีในเวอร์ชันเต็ม";
+// Every HTML page of the GitHub Pages site.
+function htmlPages(dir = path.join(repo, "docs")) {
+  return fs.readdirSync(dir, { withFileTypes: true }).flatMap(entry => {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) return htmlPages(full);
+    return /\.html$/i.test(entry.name) ? [full] : [];
+  });
+}
+// Runs docs/config.js with another exec URL (placeholder or a real one).
+function runConfig(url) {
+  const source = fs.readFileSync(path.join(repo, "docs", "config.js"), "utf8");
+  const ctx = vm.createContext({ window: {} });
+  vm.runInContext(source.replace(/var DEMO_EXEC_URL = "[^"]*"/, 'var DEMO_EXEC_URL = "' + url + '"'), ctx);
+  return ctx;
+}
 const clone = value => JSON.parse(JSON.stringify(value));
 const okData = result => {
   assert.ok(result.json, "expected JSON");
@@ -107,7 +127,7 @@ module.exports = function registerDemoTests(test) {
 
   /* ---------------- setupDemo ---------------- */
 
-  test("setupDemo: creates sheet + folder, seeds, sets demo password + DEMO_LAST_RESET, one daily trigger", () => {
+  test("setupDemo: creates sheet + folder, seeds, sets demo password + DEMO_LAST_RESET, one hourly trigger", () => {
     const env = createGasEnvironment({ quiet: true, activeUserEmail: "owner@example.com" });
     env.loadProject(path.join(repo, "apps-script"));
     env.triggers.push({ handler: "keepWarm", id: "keep", everyMinutes: 10 });
@@ -124,8 +144,9 @@ module.exports = function registerDemoTests(test) {
     assert.ok(last >= before && last <= Date.now() + 1000);
     const resetTriggers = env.triggers.filter(t => t.handler === "demoAutoReset");
     assert.strictEqual(resetTriggers.length, 1, "exactly one demoAutoReset trigger");
-    assert.strictEqual(resetTriggers[0].everyDays, 1);
-    assert.strictEqual(resetTriggers[0].atHour, 3);
+    assert.strictEqual(resetTriggers[0].everyHours, 1, "hourly trigger");
+    assert.strictEqual(resetTriggers[0].everyDays, undefined);
+    assert.strictEqual(resetTriggers[0].atHour, undefined);
     assert.ok(env.triggers.some(t => t.handler === "keepWarm"), "other triggers untouched");
     const sheetId = env.properties.get("SDS_SPREADSHEET_ID");
     const folderId = env.properties.get("SDS_FOLDER_ID");
@@ -172,7 +193,9 @@ module.exports = function registerDemoTests(test) {
   /* ---------------- reset ---------------- */
 
   test("seedDemoData_/resetDemoNow wipe visitor rows + uploaded PDFs and restore settings + password", () => {
-    const env = createSeededBackend();
+    // Uses the premium actions (unlocked here) to change everything a full
+    // version visitor could change, then checks the reset restores it.
+    const env = createSeededBackend({ premium: true });
     const original = clone(okData(env.get({ action: "api" })));
     // A visitor adds a record with a PDF, edits and deletes seed records, changes settings.
     const added = okData(env.post({ action: "save", record: { chemicalEnglish: "Visitor chemical" },
@@ -206,64 +229,80 @@ module.exports = function registerDemoTests(test) {
     assert.strictEqual(env.sheet().getLastRow(), original.length + 1);
   });
 
-  test("demoAutoReset: does nothing before 3 days, re-seeds once the interval has passed", () => {
+  test("demoAutoReset (fake clock): no reset at 4 h 59 min, reset at 5 h+, dates fresh after the reset", () => {
     const env = createSeededBackend();
+    const t0 = Date.UTC(2026, 9, 14, 3, 7, 0); // 10:07 Bangkok
+    env.setNow(t0);
+    env.context.resetDemoNow();
+    assert.strictEqual(env.properties.get("DEMO_LAST_RESET"), new Date(t0).toISOString());
     const target = env.context.listSds()[0];
     okData(env.post({ action: "save", record: { id: target.id, chemicalEnglish: "Changed" }, password: PASSWORD }));
 
-    // 1 day after the last reset: not due.
-    env.properties.set("DEMO_LAST_RESET", new Date(Date.now() - 1 * DAY).toISOString());
-    let result = env.context.demoAutoReset();
-    assert.strictEqual(result.reset, false);
-    assert.strictEqual(env.context.listSds()[0].chemicalEnglish, "Changed");
+    // The hourly trigger fires: 1 h, 4 h, 4 h 59 min -> not due.
+    for (const elapsed of [1 * HOUR, 4 * HOUR, 4 * HOUR + 59 * MINUTE]) {
+      env.setNow(t0 + elapsed);
+      const result = env.context.demoAutoReset();
+      assert.strictEqual(result.reset, false, "elapsed " + elapsed / MINUTE + " min");
+      assert.strictEqual(result.nextReset, new Date(t0 + 5 * HOUR).toISOString());
+      assert.strictEqual(env.context.listSds()[0].chemicalEnglish, "Changed");
+      assert.strictEqual(env.properties.get("DEMO_LAST_RESET"), new Date(t0).toISOString());
+    }
 
-    // 2.5 days: still not due (the next slot is at least 03:00 after 3 days - 2 h).
-    env.properties.set("DEMO_LAST_RESET", new Date(Date.now() - (2 * DAY + 12 * 3600 * 1000)).toISOString());
-    result = env.context.demoAutoReset();
-    assert.strictEqual(result.reset, false);
-
-    // 3+ days: reset.
-    env.properties.set("DEMO_LAST_RESET", new Date(Date.now() - 3 * DAY - 60000).toISOString());
-    result = env.context.demoAutoReset();
+    // 5 h (and anything later) -> reset.
+    const t1 = t0 + 5 * HOUR + 2 * MINUTE;
+    env.setNow(t1);
+    const result = env.context.demoAutoReset();
     assert.strictEqual(result.reset, true);
     assert.strictEqual(env.context.listSds()[0].chemicalEnglish, seedJson().records[0].chemicalEnglish);
-    assert.ok(Date.now() - Date.parse(env.properties.get("DEMO_LAST_RESET")) < 5000);
+    assert.strictEqual(env.properties.get("DEMO_LAST_RESET"), new Date(t1).toISOString());
+    assert.strictEqual(result.nextReset, new Date(t1 + 5 * HOUR).toISOString());
+    // Seeded dates are relative to the (fake) reset time, so they look fresh.
+    const rows = okData(env.get({ action: "api" }));
+    seedJson().records.forEach((seed, index) => {
+      assert.strictEqual(rows[index].revisionDate, dateText(new Date(t1 - seed.revisionDaysAgo * DAY)));
+      assert.strictEqual(rows[index].reviewDate, dateText(new Date(t1 + seed.reviewInDays * DAY)));
+    });
+
+    // Exactly 5 h after that reset -> reset again; 1 h later -> not again.
+    env.setNow(t1 + 5 * HOUR);
+    assert.strictEqual(env.context.demoAutoReset().reset, true);
+    env.setNow(t1 + 6 * HOUR);
+    assert.strictEqual(env.context.demoAutoReset().reset, false);
 
     // No DEMO_LAST_RESET at all (e.g. properties cleared): reset.
     env.properties.delete("DEMO_LAST_RESET");
     assert.strictEqual(env.context.demoAutoReset().reset, true);
+    env.setNow(null);
   });
 
-  test("next reset is a 03:00 Bangkok slot about 3 days after the last reset", () => {
+  test("reset interval constants: DEMO_RESET_HOURS = 5, hourly trigger, next reset = last reset + 5 h", () => {
     const env = createSeededBackend();
+    assert.strictEqual(env.context.DEMO_RESET_HOURS, 5);
+    assert.strictEqual(env.context.DEMO_TRIGGER_EVERY_HOURS, 1);
+    assert.ok(env.context.DEMO_RESET_TOLERANCE_MS <= MINUTE, "tolerance is small");
     const next = env.context.nextDemoResetTime_;
-    const check = (lastIso, expectedIso) => assert.strictEqual(next(lastIso).toISOString(), expectedIso, lastIso);
-    // Reset by the trigger at 03:20 BKK (20:20Z) -> 3 days later at 03:00 BKK.
-    check("2026-10-12T20:20:00.000Z", "2026-10-15T20:00:00.000Z");
-    // Manual reset at 10:00 BKK (03:00Z) -> due 3d-2h later = 08:00 BKK -> next 03:00 slot.
-    check("2026-10-13T03:00:00.000Z", "2026-10-16T20:00:00.000Z");
+    assert.strictEqual(next("2026-10-12T20:20:00.000Z").toISOString(), "2026-10-13T01:20:00.000Z");
+    assert.strictEqual(next("2026-10-13T22:45:30.000Z").toISOString(), "2026-10-14T03:45:30.000Z");
     assert.strictEqual(next(""), null);
-    for (let i = 0; i < 200; i++) {
-      const last = Date.UTC(2026, 0, 1) + i * 7919 * 1000 * 13;
-      const slot = next(new Date(last).toISOString()).getTime();
-      assert.ok(slot >= last + 3 * DAY - 2 * 3600 * 1000 && slot < last + 4 * DAY, "slot window");
-      assert.strictEqual(new Date(slot).getUTCHours(), 20, "03:00 Asia/Bangkok");
-    }
+    const code = fs.readFileSync(path.join(repo, "apps-script", "Demo.gs"), "utf8");
+    assert.ok(/timeBased\(\)\.everyHours\(/.test(code), "ScriptApp trigger uses everyHours");
+    assert.ok(!/DEMO_RESET_INTERVAL_DAYS|everyDays|atHour/.test(code), "no daily trigger leftovers");
   });
 
   test("demo info is exposed by action=demoInfo and inside bootstrap", () => {
     const env = createSeededBackend();
     const info = okData(env.get({ action: "demoInfo" }));
     assert.strictEqual(info.isDemo, true);
-    assert.strictEqual(info.intervalDays, 3);
+    assert.strictEqual(info.intervalHours, 5);
+    assert.strictEqual(info.premiumLocked, true);
     assert.strictEqual(info.lastReset, env.properties.get("DEMO_LAST_RESET"));
-    assert.ok(Date.parse(info.nextReset) > Date.parse(info.lastReset));
+    assert.strictEqual(Date.parse(info.nextReset), Date.parse(info.lastReset) + 5 * HOUR, "nextReset = lastReset + 5 h");
     assert.deepStrictEqual(clone(okData(env.get({ action: "bootstrap" })).demo), clone(info));
     const jsonp = env.get({ action: "demoInfo", callback: "cb" });
     assert.ok(/^cb\(\{"ok":true/.test(jsonp.text));
     // After a reset the cached bootstrap carries the new reset time.
-    env.properties.set("DEMO_LAST_RESET", new Date(Date.now() - 4 * DAY).toISOString());
-    env.context.demoAutoReset();
+    env.properties.set("DEMO_LAST_RESET", new Date(Date.now() - 5 * HOUR - MINUTE).toISOString());
+    assert.strictEqual(env.context.demoAutoReset().reset, true);
     const after = okData(env.get({ action: "bootstrap" })).demo;
     assert.strictEqual(after.lastReset, env.properties.get("DEMO_LAST_RESET"));
   });
@@ -289,10 +328,47 @@ module.exports = function registerDemoTests(test) {
     // Editing still works when the demo is full.
     const target = env.context.listSds()[0];
     okData(env.post({ action: "save", record: { id: target.id, chemicalEnglish: "Edited" }, password: PASSWORD }));
+    env.context.DEMO_PREMIUM_LOCKED = false; // upload limit of the full version
     env.context.DEMO_MAX_UPLOAD_BYTES = 10;
     const big = env.post({ action: "save", record: { id: target.id, chemicalEnglish: "E" }, password: PASSWORD,
       file: { name: "big.pdf", base64: Buffer.from("%PDF-1.4 more than ten bytes").toString("base64") } }).json;
     assert.strictEqual(big.ok, false);
+  });
+
+  test("locked premium actions are rejected server-side; browse/search, add (text) and edit still work", () => {
+    const env = createSeededBackend();
+    const before = clone(okData(env.get({ action: "bootstrap" })));
+    const v0 = env.properties.get("SDS_DATA_VERSION");
+    const target = before.rows[0];
+    const pdf = { name: "x.pdf", mimeType: "application/pdf", base64: Buffer.from("%PDF-1.4 x").toString("base64") };
+    const lockedPayloads = [
+      { action: "delete", id: target.id, password: PASSWORD },
+      { action: "saveColumnWidths", columnWidths: { 1: 150 }, password: PASSWORD },
+      { action: "saveColumnVisibility", columnVisibility: { 3: false }, password: PASSWORD },
+      { action: "saveHazardDefinitions", hazardDefinitions: [{ name: "Only one" }] },
+      { action: "save", record: { chemicalEnglish: "With PDF" }, file: pdf },
+      { action: "save", record: { id: target.id, chemicalEnglish: "With PDF" }, file: pdf, password: PASSWORD }
+    ];
+    lockedPayloads.forEach(payload => {
+      const result = env.post(payload).json;
+      assert.strictEqual(result.ok, false, payload.action + " must be locked");
+      assert.ok(result.error.indexOf(LOCKED_MESSAGE) === 0, result.error);
+    });
+    assert.strictEqual(env.properties.get("SDS_DATA_VERSION"), v0, "locked actions change nothing");
+    assert.strictEqual(env.driveFiles.size, 0, "no PDF stored");
+    const after = clone(okData(env.get({ action: "bootstrap" })));
+    assert.deepStrictEqual(after.rows, before.rows);
+    assert.deepStrictEqual(after.columnWidths, before.columnWidths);
+    assert.deepStrictEqual(after.hazardDefinitions, before.hazardDefinitions);
+
+    // Still usable: reads, verifyPassword, add a text-only record, edit it.
+    okData(env.get({ action: "api" }));
+    okData(env.get({ action: "demoInfo" }));
+    okData(env.post({ action: "verifyPassword", password: PASSWORD }));
+    const added = okData(env.post({ action: "save", record: { chemicalThai: "สารใหม่", chemicalEnglish: "New one", cas: "64-17-5" }, file: null }));
+    const edited = okData(env.post({ action: "save", record: { id: added.id, chemicalEnglish: "New one (edited)" }, password: PASSWORD }));
+    assert.strictEqual(edited.chemicalEnglish, "New one (edited)");
+    assert.ok(okData(env.get({ action: "api" })).some(row => row.chemicalEnglish === "New one (edited)"));
   });
 
   test("owner-only and production-only functions are not reachable from the web API", () => {
@@ -310,30 +386,81 @@ module.exports = function registerDemoTests(test) {
 
   /* ---------------- frontend ---------------- */
 
-  test("docs/config.js: exec URL placeholder, DEMO_CONTACT, demo password; placeholder means no API", () => {
+  test("docs/config.js: exec URL (placeholder or deployed /exec), DEMO_CONTACT, demo password, DEMO_TRIAL", () => {
     const source = fs.readFileSync(path.join(repo, "docs", "config.js"), "utf8");
-    assert.ok(source.includes('"PASTE_DEPLOYED_EXEC_URL_HERE"'));
-    const run = url => {
-      const ctx = vm.createContext({ window: {} });
-      vm.runInContext(source.replace('var DEMO_EXEC_URL = "PASTE_DEPLOYED_EXEC_URL_HERE"', 'var DEMO_EXEC_URL = "' + url + '"'), ctx);
-      return ctx;
-    };
-    const unset = run("PASTE_DEPLOYED_EXEC_URL_HERE");
+    const current = (/var DEMO_EXEC_URL = "([^"]*)"/.exec(source) || [])[1];
+    assert.ok(current === "PASTE_DEPLOYED_EXEC_URL_HERE" || /^https:\/\/script\.google\.com\/macros\/s\/[\w-]+\/exec$/.test(current), "exec URL " + current);
+    const unset = runConfig("PASTE_DEPLOYED_EXEC_URL_HERE");
     assert.strictEqual(unset.window.SDS_CONFIG.apiUrl, "");
     assert.strictEqual(unset.window.SDS_CONFIG.apiConfigured, false);
     assert.strictEqual(unset.DEMO_CONTACT, "สนใจใช้งานจริง ติดต่อ: Fastwork / LINE: (ใส่ภายหลัง)");
     assert.strictEqual(unset.window.SDS_CONFIG.demoPassword, PASSWORD);
-    const set = run("https://script.google.com/macros/s/ABC/exec");
+    const set = runConfig("https://script.google.com/macros/s/ABC/exec");
     assert.strictEqual(set.window.SDS_CONFIG.apiUrl, "https://script.google.com/macros/s/ABC/exec");
     assert.strictEqual(set.window.SDS_CONFIG.publicReadOnly, false);
+    // Per-visitor trial gate.
+    const trial = unset.window.DEMO_TRIAL;
+    assert.ok(trial, "window.DEMO_TRIAL");
+    assert.strictEqual(trial.gateUrl, "PASTE_TRIAL_GATE_URL_HERE");
+    assert.strictEqual(trial.app, "sds");
+    assert.strictEqual(trial.hours, 5);
+    assert.strictEqual(trial.contact, unset.DEMO_CONTACT);
+    assert.strictEqual(trial.priceHtml, "สิทธิ์ใช้งาน Cloud 1,990 บาท/เดือน · ขายขาด 89,000 บาท");
     // Demo password in Apps Script and on the page must match.
     const env = createSeededBackend();
     assert.strictEqual(env.context.DEMO_ACTION_PASSWORD, unset.window.SDS_CONFIG.demoPassword);
   });
 
+  test("trial-gate.js: shared client copied unchanged and loaded right after config.js on every page", () => {
+    const local = fs.readFileSync(path.join(repo, "docs", "trial-gate.js"), "utf8");
+    const shared = path.resolve(repo, "..", "TrialGate", "client", "trial-gate.js");
+    if (fs.existsSync(shared)) assert.strictEqual(local, fs.readFileSync(shared, "utf8"), "docs/trial-gate.js differs from TrialGate/client");
+    assert.ok(/window\.DEMO_TRIAL/.test(local) && /DemoTrial/.test(local));
+    const pages = htmlPages();
+    assert.ok(pages.length >= 1);
+    pages.forEach(page => {
+      const html = fs.readFileSync(page, "utf8");
+      const name = path.relative(repo, page);
+      const config = html.indexOf('src="config.js');
+      const gate = html.indexOf('src="trial-gate.js');
+      assert.ok(config !== -1, name + " loads config.js");
+      assert.ok(gate > config, name + " loads trial-gate.js after config.js");
+      assert.strictEqual((html.match(/src="trial-gate\.js/g) || []).length, 1, name + " loads trial-gate.js once");
+    });
+  });
+
+  test("docs/index.html: premium features stay visible with 🔒 and use one shared lock message", () => {
+    const html = fs.readFileSync(path.join(repo, "docs", "index.html"), "utf8");
+    const lock = fs.readFileSync(path.join(repo, "docs", "demo-lock.js"), "utf8");
+    [
+      ['onclick="exportCSV()"', "export CSV"],
+      ['onclick="openColumnWidthSettings()"', "column widths"],
+      ['onclick="openColumnVisibilitySettings()"', "table headings"],
+      ['onclick="openHazardSettings()"', "hazard settings"],
+      ['onclick="printQrCode()"', "print QR"],
+      ['onclick="printSdsQuickView()"', "print SDS"]
+    ].forEach(([marker, label]) => {
+      const index = html.indexOf(marker);
+      assert.ok(index !== -1, label + " button still visible");
+      const button = html.slice(html.lastIndexOf("<button", index), html.indexOf("</button>", index));
+      assert.ok(button.includes("🔒") && button.includes("data-demo-locked"), label + " marked 🔒");
+    });
+    assert.ok(/title="🔒 ลบ[^"]*" onclick="deleteSDS\(\$\{item\.id\}\)">🔒🗑️/.test(html), "delete button marked 🔒");
+    assert.ok(/<input type="file" id="sdsFile" accept="\.pdf" disabled>/.test(html), "PDF upload disabled");
+    assert.ok(html.includes('id="demoLockModal"'));
+    assert.ok(html.lastIndexOf('src="demo-lock.js') > html.lastIndexOf("Google Apps Script / GitHub Pages bridge"), "lock loads after the bridge");
+    assert.ok(lock.includes("🔒 ฟีเจอร์นี้มีในเวอร์ชันเต็ม") && lock.includes("DEMO_CONTACT"));
+    ["deleteSDS", "exportCSV", "openHazardSettings", "openColumnWidthSettings", "openColumnVisibilitySettings", "printQrCode", "printSdsQuickView"]
+      .forEach(name => assert.ok(new RegExp("\\b" + name + ":").test(lock), name + " locked in demo-lock.js"));
+    // Still usable (not locked): add, edit, view SDS, search/filter, dashboard.
+    ["openAddDrawer", "editSDS", "viewSDS", "openTableSds", "renderTable", "showAllSds", "saveSDS"]
+      .forEach(name => assert.ok(!new RegExp("\\b" + name + ":").test(lock), name + " must stay usable"));
+  });
+
   test("docs/index.html: demo banner + demo account box, demo seed loaded, no embedded production data", () => {
     const html = fs.readFileSync(path.join(repo, "docs", "index.html"), "utf8");
-    assert.ok(html.includes("🧪 ระบบทดลองใช้ (Demo) — ข้อมูลทั้งหมดจะถูกรีเซ็ตกลับเป็นค่าเริ่มต้นทุก 3 วัน · รีเซ็ตครั้งถัดไป:"));
+    assert.ok(html.includes("🧪 ระบบทดลองใช้ (Demo) — ข้อมูลส่วนกลางรีเซ็ตเป็นค่าเริ่มต้นทุก 5 ชั่วโมง · ผู้ทดลองแต่ละคนใช้งานได้ 5 ชั่วโมง · รีเซ็ตครั้งถัดไป:"));
+    assert.ok(!/ทุก 3 วัน/.test(html), "old 3-day text removed");
     assert.ok(html.includes("บัญชีทดลอง"));
     assert.ok(html.includes('id="demoContact"') && html.includes('id="demoApiWarning"'));
     assert.ok(html.includes("ยังไม่ได้ตั้งค่า API"));
@@ -379,10 +506,10 @@ module.exports = function registerDemoTests(test) {
       await new Promise(resolve => setTimeout(resolve, 20));
       return { elements, calls };
     };
-    const next = new Date(Date.now() + 2 * DAY + 5 * 3600 * 1000 + 10 * 60 * 1000).toISOString();
+    const next = new Date(Date.now() + 4 * HOUR + 59 * MINUTE + 30000).toISOString();
     const viaEarly = await run({ apiUrl: "https://x/exec", demoPassword: PASSWORD }, { ok: true, data: { rows: [], demo: { nextReset: next } } });
     assert.strictEqual(viaEarly.calls.length, 0, "reuses the early bootstrap");
-    assert.ok(/อีก 2 วัน 5 ชม\./.test(viaEarly.elements.demoCountdown.textContent), viaEarly.elements.demoCountdown.textContent);
+    assert.strictEqual(viaEarly.elements.demoCountdown.textContent, "(อีก 4 ชม. 59 นาที)");
     assert.ok(viaEarly.elements.demoNextReset.textContent.length > 5);
     assert.strictEqual(viaEarly.elements.demoContact.textContent, "Contact X");
     assert.strictEqual(viaEarly.elements.demoPasswordText.textContent, PASSWORD);
@@ -390,7 +517,11 @@ module.exports = function registerDemoTests(test) {
     const viaFetch = await run({ apiUrl: "https://x/exec" }, null, { ok: true, data: { nextReset: next } });
     assert.strictEqual(viaFetch.calls.length, 1);
     assert.ok(/action=demoInfo/.test(viaFetch.calls[0]));
-    assert.ok(/อีก 2 วัน/.test(viaFetch.elements.demoCountdown.textContent));
+    assert.ok(/อีก 4 ชม\. 59 นาที/.test(viaFetch.elements.demoCountdown.textContent));
+    const soon = await run({ apiUrl: "https://x/exec" }, null, { ok: true, data: { nextReset: new Date(Date.now() + 7 * MINUTE + 1000).toISOString() } });
+    assert.strictEqual(soon.elements.demoCountdown.textContent, "(อีก 7 นาที)");
+    const due = await run({ apiUrl: "https://x/exec" }, null, { ok: true, data: { nextReset: new Date(Date.now() - MINUTE).toISOString() } });
+    assert.ok(/ภายใน 1 ชม\./.test(due.elements.demoCountdown.textContent));
 
     const noApi = await run({ apiUrl: "" });
     assert.strictEqual(noApi.calls.length, 0);
@@ -416,7 +547,11 @@ module.exports = function registerDemoTests(test) {
     walk(repo);
     assert.ok(files.length > 10);
     files.forEach(file => {
-      const text = fs.readFileSync(file, "utf8");
+      let text = fs.readFileSync(file, "utf8");
+      // The owner's own deployed DEMO web app URL is allowed in docs/config.js.
+      if (path.relative(repo, file) === path.join("docs", "config.js")) {
+        text = text.replace(/var DEMO_EXEC_URL = "https:\/\/script\.google\.com\/macros\/s\/[\w-]+\/exec";/, "");
+      }
       forbidden.forEach(pattern => {
         const match = text.match(pattern);
         assert.ok(!match, path.relative(repo, file) + " contains " + (match && match[0]));

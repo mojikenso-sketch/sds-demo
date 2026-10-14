@@ -12,7 +12,8 @@
   <link rel="dns-prefetch" href="https://script.google.com">
   <link rel="dns-prefetch" href="https://script.googleusercontent.com">
   <link rel="dns-prefetch" href="https://cdnjs.cloudflare.com">
-  <script src="config.js?v=1790000000000"></script>
+  <script src="config.js?v=1790100000000"></script>
+  <script src="trial-gate.js?v=1790100000000"></script>
   <script>
     /* Start the single bootstrap request (rows + shared settings) while the
        rest of this large page is still downloading. The bridge script at the
@@ -908,20 +909,51 @@
       .demo-banner-sub { font-size: 11px; }
     }
     @media print { .demo-banner { display: none !important; } }
+
+    /* ---------- DEMO: locked premium features + trial badge room ---------- */
+    .demo-locked-note { color: #92400e; }
+    [data-demo-locked], .demo-locked-btn { opacity: .78; }
+    [data-demo-locked]:hover, .demo-locked-btn:hover { opacity: 1; }
+    .demo-locked-box { cursor: pointer; }
+    .demo-locked-box input[type=file] { pointer-events: none; }
+    .demo-locked-hint { font-size: 12px; color: #92400e; margin: 4px 0 6px; }
+    .demo-lock-modal {
+      position: fixed; inset: 0; z-index: 2147482000; display: flex; align-items: center; justify-content: center;
+      background: rgba(15, 23, 42, .45); padding: 16px;
+    }
+    .demo-lock-modal[hidden] { display: none; }
+    .demo-lock-box {
+      background: #fff; color: #1e293b; max-width: 380px; width: 100%; border-radius: 14px; padding: 20px 22px;
+      box-shadow: 0 20px 50px rgba(0, 0, 0, .3); text-align: center; line-height: 1.6;
+    }
+    .demo-lock-box h3 { font-size: 17px; margin-bottom: 6px; }
+    .demo-lock-box p { font-size: 14px; color: #475569; }
+    .demo-lock-box .demo-lock-contact { margin-top: 8px; font-weight: 700; color: #1d4ed8; overflow-wrap: anywhere; }
+    .demo-lock-box button { margin-top: 14px; }
+    /* The trial badge (trial-gate.js) sits bottom-left: keep page ends and the
+       drawer buttons clear of it. */
+    body { padding-bottom: 64px; }
+    @media (max-width: 600px) { .drawer-footer { padding-bottom: 64px !important; } }
+    /* Printing is a premium feature of the full version. */
+    @media print {
+      body > * { display: none !important; }
+      body::before { content: "🔒 การพิมพ์มีในเวอร์ชันเต็ม (Demo)"; display: block; padding: 40px; font-size: 18pt; text-align: center; }
+    }
   </style>
 </head>
 
 <body>
 <div class="demo-banner" id="demoBanner" role="note">
-  <div class="demo-banner-main">🧪 ระบบทดลองใช้ (Demo) — ข้อมูลทั้งหมดจะถูกรีเซ็ตกลับเป็นค่าเริ่มต้นทุก 3 วัน · รีเซ็ตครั้งถัดไป: <strong id="demoNextReset">กำลังตรวจสอบ...</strong> <span id="demoCountdown"></span></div>
+  <div class="demo-banner-main">🧪 ระบบทดลองใช้ (Demo) — ข้อมูลส่วนกลางรีเซ็ตเป็นค่าเริ่มต้นทุก 5 ชั่วโมง · ผู้ทดลองแต่ละคนใช้งานได้ 5 ชั่วโมง · รีเซ็ตครั้งถัดไป: <strong id="demoNextReset">กำลังตรวจสอบ...</strong> <span id="demoCountdown"></span></div>
   <div class="demo-banner-sub">
-    <span class="demo-account-box"><b>บัญชีทดลอง</b> รหัสสำหรับ แก้ไข / ลบ / ตั้งค่าตาราง: <code id="demoPasswordText">demo1234</code></span>
+    <span class="demo-account-box"><b>บัญชีทดลอง</b> รหัสสำหรับ แก้ไขข้อมูล: <code id="demoPasswordText">demo1234</code></span>
     <span>ข้อมูลตัวอย่างของ บริษัท ตัวอย่าง อินดัสทรี จำกัด (Demo Co., Ltd.)</span>
     <span id="demoContact">สนใจใช้งานจริง ติดต่อ: Fastwork / LINE: (ใส่ภายหลัง)</span>
+    <span class="demo-locked-note">🔒 = ฟีเจอร์ในเวอร์ชันเต็ม</span>
   </div>
   <div class="demo-banner-warning" id="demoApiWarning" hidden>⚠️ ยังไม่ได้ตั้งค่า API — ใส่ URL ของ Apps Script (/exec) ในไฟล์ docs/config.js ตอนนี้กำลังแสดงข้อมูลตัวอย่างที่บันทึกเฉพาะในเบราว์เซอร์นี้ / API not configured: showing local sample data.</div>
 </div>
-<script src="demo-banner.js?v=1790000000000"></script>
+<script src="demo-banner.js?v=1790100000000"></script>
 <div class="settings-modal" id="hazardSettingsModal" hidden onclick="closeHazardSettings(event)">
   <div class="settings-dialog" onclick="event.stopPropagation()">
     <div class="settings-header">
@@ -1012,7 +1044,7 @@
         <h3 class="section-title"><span class="bilingual-label">ภาพรวมสัญลักษณ์ความอันตราย<small>Pictogram Overview</small></span> <span class="hazard-total" id="hazardOverviewTotal">(<span class="bilingual-label">รวมทั้งหมด 0 เอกสาร<small>0 documents total</small></span>)</span></h3>
         <div class="section-actions">
           <button class="view-all-btn" type="button" onclick="showAllSds()"><span class="bilingual-label">ดูทั้งหมด<small>View all</small></span></button>
-          <button class="settings-btn" type="button" onclick="openHazardSettings()"><span class="bilingual-label">⚙ ตั้งค่า<small>Settings</small></span></button>
+          <button class="settings-btn" type="button" onclick="openHazardSettings()" data-demo-locked="ตั้งค่าภาพรวมอันตราย"><span class="bilingual-label">🔒 ⚙ ตั้งค่า<small>Settings</small></span></button>
         </div>
       </div>
       <div class="hazards" id="hazardOverview"></div>
@@ -1044,9 +1076,9 @@
       </div>
 
       <div class="table-toolbar-actions">
-        <button id="columnWidthSettingsButton" class="settings-btn column-width-settings-trigger" type="button" onclick="openColumnWidthSettings()"><span class="bilingual-label">↔ ตั้งค่าความกว้าง<small>Column widths</small></span></button>
-        <button id="columnVisibilitySettingsButton" class="settings-btn" type="button" onclick="openColumnVisibilitySettings()"><span class="bilingual-label">☷ ตั้งค่าหัวข้อ<small>Table headings</small></span></button>
-        <button class="btn-secondary export-btn" onclick="exportCSV()"><span class="bilingual-label">↓ ส่งออก CSV<small>Export CSV</small></span></button>
+        <button id="columnWidthSettingsButton" class="settings-btn column-width-settings-trigger" type="button" onclick="openColumnWidthSettings()" data-demo-locked="ตั้งค่าความกว้างคอลัมน์"><span class="bilingual-label">🔒 ↔ ตั้งค่าความกว้าง<small>Column widths</small></span></button>
+        <button id="columnVisibilitySettingsButton" class="settings-btn" type="button" onclick="openColumnVisibilitySettings()" data-demo-locked="ตั้งค่าหัวข้อตาราง"><span class="bilingual-label">🔒 ☷ ตั้งค่าหัวข้อ<small>Table headings</small></span></button>
+        <button class="btn-secondary export-btn" onclick="exportCSV()" data-demo-locked="ส่งออก CSV"><span class="bilingual-label">🔒 ↓ ส่งออก CSV<small>Export CSV</small></span></button>
       </div>
     </div>
 
@@ -1169,9 +1201,10 @@
 
       <div class="form-section">
         <div class="form-section-title"><span class="bilingual-label">6. เอกสาร SDS<small>6. SDS Document</small></span></div>
-        <div class="upload-box">
-          📄 <span class="bilingual-label">อัปโหลดเอกสารข้อมูลความปลอดภัย<small>Upload Safety Data Sheet</small></span><br>
-          <input type="file" id="sdsFile" accept=".pdf">
+        <div class="upload-box demo-locked-box" data-demo-locked="อัปโหลด PDF / อ่านข้อมูลจาก PDF อัตโนมัติ">
+          🔒 📄 <span class="bilingual-label">อัปโหลดเอกสารข้อมูลความปลอดภัย<small>Upload Safety Data Sheet</small></span><br>
+          <div class="demo-locked-hint">อัปโหลด PDF มีในเวอร์ชันเต็ม — ในเดโมบันทึกได้เฉพาะข้อมูลตัวอักษร</div>
+          <input type="file" id="sdsFile" accept=".pdf" disabled>
           <div style="font-size:11px; margin-top:8px;">รองรับไฟล์ PDF / PDF files only</div>
           <div id="pdfAutoStatus" class="pdf-auto-status" role="status" aria-live="polite">
             <span class="bilingual-label">เมื่อเลือก PDF ระบบจะอ่านข้อมูลให้อัตโนมัติ<small>PDF data will be detected automatically</small></span>
@@ -1227,7 +1260,7 @@
       <div class="qr-record-cas" id="qrRecordCas">-</div>
       <div class="qr-url" id="qrRecordUrl">-</div>
       <div class="qr-dialog-actions">
-        <button class="btn-primary" type="button" onclick="printQrCode()"><span class="bilingual-label">🖨 พิมพ์ QR<small>Print QR</small></span></button>
+        <button class="btn-primary" type="button" onclick="printQrCode()" data-demo-locked="พิมพ์ QR"><span class="bilingual-label">🔒 🖨 พิมพ์ QR<small>Print QR</small></span></button>
         <button class="btn-secondary" type="button" onclick="closeQrModal()"><span class="bilingual-label">ปิด<small>Close</small></span></button>
       </div>
     </div>
@@ -1257,7 +1290,7 @@
     <div class="sds-quick-header">
       <h3><span class="bilingual-label">ข้อมูล SDS<small>SDS Information</small></span></h3>
       <div class="sds-quick-header-actions">
-        <button class="sds-quick-fullscreen-toggle" type="button" onclick="printSdsQuickView()" aria-label="พิมพ์ข้อมูล SDS / Print SDS information">🖨 <span>พิมพ์<small>Print</small></span></button>
+        <button class="sds-quick-fullscreen-toggle" type="button" onclick="printSdsQuickView()" data-demo-locked="พิมพ์ข้อมูล SDS" aria-label="พิมพ์ข้อมูล SDS / Print SDS information (เวอร์ชันเต็ม)">🔒 🖨 <span>พิมพ์<small>Print</small></span></button>
         <button class="sds-quick-fullscreen-toggle" id="sdsQuickFullscreenButton" type="button" onclick="toggleSdsQuickFullScreen()" aria-label="ดูข้อมูลเต็มจอ / View full screen">⛶ <span>เต็มจอ<small>Full screen</small></span></button>
         <button class="close-btn" type="button" onclick="closeSdsQuickView()">×</button>
       </div>
@@ -3397,7 +3430,7 @@
             <button class="action-btn" title="แก้ไข" onclick="editSDS(${item.id})">✏️</button>
           </td>
           <td class="action-cell">
-            <button class="action-btn" title="ลบ" onclick="deleteSDS(${item.id})">🗑️</button>
+            <button class="action-btn demo-locked-btn" title="🔒 ลบ (เวอร์ชันเต็ม)" onclick="deleteSDS(${item.id})">🔒🗑️</button>
           </td>
         </tr>`).join("");
     // Rows are rebuilt on every search/filter, so hidden headings must be
@@ -4617,5 +4650,14 @@
     }
   })();
 </script>
+<div class="demo-lock-modal" id="demoLockModal" hidden role="dialog" aria-modal="true" aria-labelledby="demoLockTitle">
+  <div class="demo-lock-box">
+    <h3 id="demoLockTitle">🔒 ฟีเจอร์นี้มีในเวอร์ชันเต็ม</h3>
+    <p id="demoLockFeature"></p>
+    <div class="demo-lock-contact" id="demoLockContact"></div>
+    <button class="btn-primary" type="button" id="demoLockClose">ตกลง / OK</button>
+  </div>
+</div>
+<script src="demo-lock.js?v=1790100000000"></script>
 </body>
 </html>

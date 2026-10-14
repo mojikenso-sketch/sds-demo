@@ -329,6 +329,7 @@ function createGasEnvironment(options = {}) {
       const builder = {
         timeBased: () => builder,
         everyMinutes: minutes => { spec.everyMinutes = minutes; return builder; },
+        everyHours: hours => { spec.everyHours = hours; return builder; },
         everyDays: days => { spec.everyDays = days; return builder; },
         atHour: hour => { spec.atHour = hour; return builder; },
         create: () => { stats.triggerWrites++; triggers.push(spec); return spec; }
@@ -367,6 +368,31 @@ function createGasEnvironment(options = {}) {
     const id = properties.get("SDS_SPREADSHEET_ID");
     return id ? sheets.get(id).values().next().value : null;
   };
+  /**
+   * Fake clock for the Apps Script code: new Date() / Date.now() inside the
+   * project return `ms` (null restores the real clock). Date(args) is real.
+   */
+  env.setNow = ms => {
+    context.__fakeNow = ms === null || ms === undefined ? null : Number(ms);
+    if (!context.__fakeDateInstalled) {
+      vm.runInContext(`(function () {
+        var RealDate = Date;
+        var now = function () { return globalThis.__fakeNow == null ? RealDate.now() : globalThis.__fakeNow; };
+        function FakeDate() {
+          if (!(this instanceof FakeDate)) return new RealDate(now()).toString();
+          if (!arguments.length) return new RealDate(now());
+          return new (Function.prototype.bind.apply(RealDate, [null].concat(Array.prototype.slice.call(arguments))))();
+        }
+        FakeDate.now = now;
+        FakeDate.parse = RealDate.parse;
+        FakeDate.UTC = RealDate.UTC;
+        FakeDate.prototype = RealDate.prototype;
+        globalThis.Date = FakeDate;
+        globalThis.__fakeDateInstalled = true;
+      })();`, context);
+    }
+    return env;
+  };
   env.resetStats = () => Object.assign(stats, newStats());
   env.snapshotStats = () => Object.assign({}, stats);
 
@@ -390,6 +416,8 @@ function decodeOutput(output) {
  * owner, from the editor). Visitors afterwards are anonymous.
  * options.codePath: load a single Code.gs instead (plus Demo.gs/DemoSeed.gs
  * from the same folder when present).
+ * options.premium: true unlocks the premium features that the public demo
+ * locks (DEMO_PREMIUM_LOCKED = false), to test the underlying code paths.
  */
 function createSeededBackend(options = {}) {
   const repo = path.resolve(__dirname, "..");
@@ -407,6 +435,7 @@ function createSeededBackend(options = {}) {
     env.loadProject(path.join(repo, "apps-script"));
   }
   if (options.setup !== false) env.context.setupDemo();
+  if (options.premium) env.context.DEMO_PREMIUM_LOCKED = false;
   // Visitors of the public web app are anonymous (not administrators).
   env.activeUserEmail = "";
   env.cache.clear();

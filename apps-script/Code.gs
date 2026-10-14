@@ -4,7 +4,8 @@
  *
  * Run setupDemo() (Demo.gs) once from the Apps Script editor. It creates the
  * spreadsheet and Drive folder used by this app, stores their IDs in Script
- * Properties, writes the sample data and installs the auto-reset trigger.
+ * Properties, writes the sample data and installs the hourly auto-reset
+ * trigger (shared demo data is re-seeded every 5 hours).
  * Files: Code.gs (API), Demo.gs (seed / reset), DemoSeed.gs (sample data).
  */
 
@@ -149,6 +150,11 @@ function doPost(e) {
     var payload = JSON.parse(body);
     var action = payload.action;
     var result;
+
+    // DEMO: premium features of the full version are locked server-side too,
+    // so they cannot be called directly (see demoLockedReason_ in Demo.gs).
+    var locked = demoLockedReason_(payload);
+    if (locked) return jsonResponse_({ ok: false, error: locked, locked: true });
 
     if (action === "save") {
       result = saveSds(payload.record || {}, payload.file || null, payload.password);

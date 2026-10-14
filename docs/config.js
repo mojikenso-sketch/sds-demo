@@ -1,4 +1,4 @@
-// SDS Management — DEMO configuration. Only edit the three values below.
+// SDS Management — DEMO configuration. Only edit the four values below.
 
 // 1) URL of the Apps Script Web app (Deploy > Web app), ending in /exec.
 //    While this still says PASTE_DEPLOYED_EXEC_URL_HERE the page shows
@@ -17,7 +17,20 @@ window.SDS_CONFIG = {
   apiConfigured: /^https?:\/\/\S+\/exec\/?$/.test(DEMO_EXEC_URL),
   demoPassword: DEMO_PASSWORD,
   demoContact: DEMO_CONTACT,
-  // Visitors may add / edit / delete (edit, delete and table settings ask for
-  // the demo password). Everything is reset every 3 days.
+  // Visitors may add (text only) and edit (edit asks for the demo password).
+  // Premium features are locked (docs/demo-lock.js). Shared data is reset
+  // every 5 hours.
   publicReadOnly: false
+};
+
+// 4) Per-visitor trial (docs/trial-gate.js): each visitor (IP + device) may use
+//    the demo for 5 hours. Paste the /exec URL of the separate "Trial Gate"
+//    Apps Script project. While it still says PASTE_TRIAL_GATE_URL_HERE (or the
+//    gate cannot be reached) the demo stays open (fail-open).
+window.DEMO_TRIAL = {
+  gateUrl: "PASTE_TRIAL_GATE_URL_HERE",
+  app: "sds",
+  hours: 5,
+  contact: DEMO_CONTACT,
+  priceHtml: "สิทธิ์ใช้งาน Cloud 1,990 บาท/เดือน · ขายขาด 89,000 บาท"
 };
