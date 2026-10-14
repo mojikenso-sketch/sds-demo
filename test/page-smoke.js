@@ -46,7 +46,7 @@ function makeElement(id) {
   });
 }
 
-function runPage({ apiUrl, backend }) {
+function runPage({ apiUrl, backend, gateUrl }) {
   const elements = new Map();
   const byId = id => {
     if (!elements.has(id)) elements.set(id, makeElement(id));
@@ -102,7 +102,12 @@ function runPage({ apiUrl, backend }) {
   }));
 
   const config = fs.readFileSync(path.join(docs, "config.js"), "utf8")
-    .replace(/var DEMO_EXEC_URL = "[^"]*"/, 'var DEMO_EXEC_URL = "' + (apiUrl || "PASTE_DEPLOYED_EXEC_URL_HERE") + '"');
+    .replace(/var DEMO_EXEC_URL = "[^"]*"/, 'var DEMO_EXEC_URL = "' + (apiUrl || "PASTE_DEPLOYED_EXEC_URL_HERE") + '"')
+    // docs/config.js may hold the real Trial Gate URL; the smoke test always
+    // runs with the placeholder so fetchCalls only counts the app's own API
+    // calls and the gate stays fail-open (no ipify/cloudflare/gate requests).
+    .replace(/gateUrl: "[^"]*"/, 'gateUrl: "' + (gateUrl || "PASTE_TRIAL_GATE_URL_HERE") + '"');
+  assert.ok(/gateUrl: "PASTE_TRIAL_GATE_URL_HERE"/.test(config) || gateUrl, "placeholder gate URL injected");
   vm.runInContext(config, context, { filename: "config.js" });
 
   // Inline and local scripts in document order.

@@ -401,7 +401,7 @@ module.exports = function registerDemoTests(test) {
     // Per-visitor trial gate.
     const trial = unset.window.DEMO_TRIAL;
     assert.ok(trial, "window.DEMO_TRIAL");
-    assert.strictEqual(trial.gateUrl, "PASTE_TRIAL_GATE_URL_HERE");
+    assert.ok(trial.gateUrl === "PASTE_TRIAL_GATE_URL_HERE" || /^https:\/\/script\.google\.com\/macros\/s\/[\w-]+\/exec$/.test(trial.gateUrl), "gate URL " + trial.gateUrl);
     assert.strictEqual(trial.app, "sds");
     assert.strictEqual(trial.hours, 5);
     assert.strictEqual(trial.contact, unset.DEMO_CONTACT);
@@ -551,6 +551,8 @@ module.exports = function registerDemoTests(test) {
       // The owner's own deployed DEMO web app URL is allowed in docs/config.js.
       if (path.relative(repo, file) === path.join("docs", "config.js")) {
         text = text.replace(/var DEMO_EXEC_URL = "https:\/\/script\.google\.com\/macros\/s\/[\w-]+\/exec";/, "");
+        // ...and so is the shared Trial Gate deployment URL (DEMO_TRIAL.gateUrl).
+        text = text.replace(/gateUrl: "https:\/\/script\.google\.com\/macros\/s\/[\w-]+\/exec",/, "");
       }
       forbidden.forEach(pattern => {
         const match = text.match(pattern);
