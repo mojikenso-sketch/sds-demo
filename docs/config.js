@@ -28,7 +28,7 @@ window.SDS_CONFIG = {
 //    Apps Script project. While it still says PASTE_TRIAL_GATE_URL_HERE (or the
 //    gate cannot be reached) the demo stays open (fail-open).
 window.DEMO_TRIAL = {
-  gateUrl: "PASTE_TRIAL_GATE_URL_HERE",
+  gateUrl: "https://script.google.com/macros/s/AKfycbwQzhsI1OIN-YUumWLE0n1150c9hTPC--Npm19k44AIDjneJfn2SFXnTYxsW9OGbO0/exec",
   app: "sds",
   hours: 5,
   contact: DEMO_CONTACT,
