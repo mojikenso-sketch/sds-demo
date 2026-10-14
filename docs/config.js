@@ -3,7 +3,7 @@
 // 1) URL of the Apps Script Web app (Deploy > Web app), ending in /exec.
 //    While this still says PASTE_DEPLOYED_EXEC_URL_HERE the page shows
 //    "ยังไม่ได้ตั้งค่า API" and runs on the sample data in this browser only.
-var DEMO_EXEC_URL = "PASTE_DEPLOYED_EXEC_URL_HERE";
+var DEMO_EXEC_URL = "https://script.google.com/macros/s/AKfycby8aQN0Nu_1IVGQUl2GPNU8FrJMOJ5l6m2k5ALyUk0ZSWkkyD07BJZI8yVSCLq4XZJ_-A/exec";
 
 // 2) Contact line shown in the demo banner on every page.
 var DEMO_CONTACT = "สนใจใช้งานจริง ติดต่อ: Fastwork / LINE: (ใส่ภายหลัง)";
