@@ -467,7 +467,7 @@ module.exports = function registerDemoTests(test) {
     assert.ok(html.indexOf('src="demo-banner.js') > html.indexOf('id="demoBanner"'), "banner script after banner markup");
     assert.ok(html.indexOf('src="demo-banner.js') < html.lastIndexOf("Google Apps Script / GitHub Pages bridge"), "banner reads the early request before the bridge consumes it");
     assert.ok(html.indexOf('src="demo-seed.js') < html.indexOf("const defaultData"));
-    assert.ok(html.includes("Programming by Duongruthai_Milk"), "credit kept");
+    assert.ok(!html.includes("Programming by"), "credit removed (owner request)");
     assert.ok(!/REGISTER_WORKBOOK_DATA|sds-library|Pesticide|LABAN/i.test(html));
     assert.ok(html.length < 400000, "page size " + html.length);
     assert.ok(fs.existsSync(path.join(repo, "docs", ".nojekyll")));
